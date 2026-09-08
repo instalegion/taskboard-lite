@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <title>TaskBoard Lite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+  <!-- AUTH SCREEN -->
+  <div id="auth-section" class="flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-xl shadow-md w-96 border border-slate-200">
+      <h1 class="text-2xl font-bold text-center mb-6 text-indigo-600">TaskBoard Lite</h1>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Email</label>
+          <input id="auth-email" type="email" class="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="user@example.com">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Password</label>
+          <input id="auth-password" type="password" class="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="••••••••">
+        </div>
+        <button onclick="handleLogin()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg transition">Σύνδεση</button>
+        <button onclick="handleRegister()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-lg transition">Εγγραφή</button>
+      </div>
+      <p id="auth-error" class="text-red-500 text-sm mt-3 text-center hidden"></p>
+    </div>
+  </div>
+
+  <!-- MAIN APP SCREEN -->
+  <div id="app-section" class="hidden">
+    <!-- Navbar -->
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+      <div class="flex items-center space-x-4">
+        <h1 class="text-xl font-bold text-indigo-600">TaskBoard Lite</h1>
+        <select id="board-select" onchange="loadTasks()" class="border rounded-lg p-1.5 text-sm bg-slate-50 outline-none">
+        </select>
+        <button onclick="createBoardPrompt()" class="text-sm bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium">+ Νέο Board</button>
+      </div>
+      <div class="flex items-center space-x-4">
+        <span id="user-display" class="text-sm text-slate-500"></span>
+        <button onclick="logout()" class="text-sm bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100">Αποσύνδεση</button>
+      </div>
+    </header>
+
+    <!-- Stats Bar (In-Memory Cache) -->
+    <div class="max-w-7xl mx-auto px-6 pt-6">
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between text-sm">
+        <div class="flex space-x-6">
+          <span>Σύνολο: <strong id="stat-total">0</strong></span>
+          <span>To Do: <strong id="stat-todo" class="text-amber-600">0</strong></span>
+          <span>In Progress: <strong id="stat-progress" class="text-blue-600">0</strong></span>
+          <span>Done: <strong id="stat-done" class="text-emerald-600">0</strong></span>
+        </div>
+        <div id="stat-source" class="text-xs bg-slate-100 px-2.5 py-1 rounded text-slate-500">Πηγή: -</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <h2 class="text-lg font-semibold" id="current-board-title">Board</h2>
+      <button onclick="createTaskPrompt()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded-lg shadow transition">+ Νέο Task</button>
+    </div>
+
+    <!-- Kanban Columns -->
+    <main class="max-w-7xl mx-auto px-6 pb-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- TO DO -->
+      <div class="bg-slate-200/60 p-4 rounded-xl">
+        <h3 class="font-semibold text-slate-700 mb-3 flex items-center justify-between">
+          <span>To Do</span>
+          <span id="count-todo" class="text-xs bg-slate-300 px-2 py-0.5 rounded-full">0</span>
+        </h3>
+        <div id="tasks-todo" class="space-y-3 min-h-[150px]"></div>
+      </div>
+
+      <!-- IN PROGRESS -->
+      <div class="bg-slate-200/60 p-4 rounded-xl">
+        <h3 class="font-semibold text-slate-700 mb-3 flex items-center justify-between">
+          <span>In Progress</span>
+          <span id="count-progress" class="text-xs bg-slate-300 px-2 py-0.5 rounded-full">0</span>
+        </h3>
+        <div id="tasks-progress" class="space-y-3 min-h-[150px]"></div>
+      </div>
+
+      <!-- DONE -->
+      <div class="bg-slate-200/60 p-4 rounded-xl">
+        <h3 class="font-semibold text-slate-700 mb-3 flex items-center justify-between">
+          <span>Done</span>
+          <span id="count-done" class="text-xs bg-slate-300 px-2 py-0.5 rounded-full">0</span>
+        </h3>
+        <div id="tasks-done" class="space-y-3 min-h-[150px]"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API_URL = "http://127.0.0.1:8000";
+    let token = localStorage.getItem("token") || null;
+    let currentBoardId = null;
+
+    if (token) {
+      showApp();
+    }
+
+    async function handleRegister() {
+      const email = document.getElementById("auth-email").value;
+      const password = document.getElementById("auth-password").value;
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      if (res.ok) {
+        alert("Επιτυχής εγγραφή! Συνδεθείτε.");
+      } else {
+        const data = await res.json();
+        showError(data.detail || "Σφάλμα εγγραφής");
+      }
+    }
+
+    async function handleLogin() {
+      const email = document.getElementById("auth-email").value;
+      const password = document.getElementById("auth-password").value;
+      const formData = new URLSearchParams();
+      formData.append("username", email);
+      formData.append("password", password);
+
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        token = data.access_token;
+        localStorage.setItem("token", token);
+        showApp();
+      } else {
+        showError("Λάθος email ή κωδικός");
+      }
+    }
+
+    function logout() {
+      token = null;
+      localStorage.removeItem("token");
+      document.getElementById("auth-section").classList.remove("hidden");
+      document.getElementById("app-section").classList.add("hidden");
+    }
+
+    function showError(msg) {
+      const err = document.getElementById("auth-error");
+      err.innerText = msg;
+      err.classList.remove("hidden");
+    }
+
+    async function showApp() {
+      document.getElementById("auth-section").classList.add("hidden");
+      document.getElementById("app-section").classList.remove("hidden");
+      await loadBoards();
+    }
+
+    async function loadBoards() {
+      const res = await fetch(`${API_URL}/boards`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.status === 401) return logout();
+      const boards = await res.json();
+      const select = document.getElementById("board-select");
+      select.innerHTML = "";
+
+      if (boards.length === 0) {
+        await createDefaultBoard();
+        return;
+      }
+
+      boards.forEach(b => {
+        const opt = document.createElement("option");
+        opt.value = b.id;
+        opt.innerText = b.title;
+        select.appendChild(opt);
+      });
+
+      currentBoardId = boards[0].id;
+      loadTasks();
+    }
+
+    async function createDefaultBoard() {
+      await fetch(`${API_URL}/boards`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ title: "My Sprint Board" })
+      });
+      loadBoards();
+    }
+
+    async function createBoardPrompt() {
+      const title = prompt("Όνομα νέου Board:");
+      if (!title) return;
+      await fetch(`${API_URL}/boards`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ title })
+      });
+      loadBoards();
+    }
+
+    async function createTaskPrompt() {
+      const title = prompt("Τίτλος Task:");
+      if (!title) return;
+      const description = prompt("Περιγραφή (προαιρετικό):") || "";
+      await fetch(`${API_URL}/boards/${currentBoardId}/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ title, description, status: "To Do" })
+      });
+      loadTasks();
+    }
+
+    async function updateStatus(taskId, newStatus) {
+      await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      loadTasks();
+    }
+
+    async function deleteTask(taskId) {
+      if (!confirm("Διαγραφή αυτού του task;")) return;
+      await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      loadTasks();
+    }
+
+    async function loadTasks() {
+      currentBoardId = document.getElementById("board-select").value;
+      if (!currentBoardId) return;
+
+      // Φόρτωση tasks
+      const res = await fetch(`${API_URL}/boards/${currentBoardId}/tasks`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const tasks = await res.json();
+
+      const todoCol = document.getElementById("tasks-todo");
+      const progCol = document.getElementById("tasks-progress");
+      const doneCol = document.getElementById("tasks-done");
+
+      todoCol.innerHTML = "";
+      progCol.innerHTML = "";
+      doneCol.innerHTML = "";
+
+      let countTodo = 0, countProg = 0, countDone = 0;
+
+      tasks.forEach(t => {
+        const card = document.createElement("div");
+        card.className = "bg-white p-3 rounded-lg shadow-sm border border-slate-200";
+        card.innerHTML = `
+          <div class="flex justify-between items-start mb-2">
+            <h4 class="font-medium text-slate-800 text-sm">${t.title}</h4>
+            <button onclick="deleteTask(${t.id})" class="text-slate-400 hover:text-red-500 text-xs">✕</button>
+          </div>
+          ${t.description ? `<p class="text-xs text-slate-500 mb-3">${t.description}</p>` : ''}
+          <div class="flex justify-end space-x-1 pt-2 border-t border-slate-100 text-xs">
+            ${t.status !== 'To Do' ? `<button onclick="updateStatus(${t.id}, 'To Do')" class="px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">← To Do</button>` : ''}
+            ${t.status !== 'In Progress' ? `<button onclick="updateStatus(${t.id}, 'In Progress')" class="px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">Prog</button>` : ''}
+            ${t.status !== 'Done' ? `<button onclick="updateStatus(${t.id}, 'Done')" class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100">Done →</button>` : ''}
+          </div>
+        `;
+
+        if (t.status === "To Do") {
+          todoCol.appendChild(card);
+          countTodo++;
+        } else if (t.status === "In Progress") {
+          progCol.appendChild(card);
+          countProg++;
+        } else if (t.status === "Done") {
+          doneCol.appendChild(card);
+          countDone++;
+        }
+      });
+
+      document.getElementById("count-todo").innerText = countTodo;
+      document.getElementById("count-progress").innerText = countProg;
+      document.getElementById("count-done").innerText = countDone;
+
+      // Φόρτωση Cached Stats
+      loadStats();
+    }
+
+    async function loadStats() {
+      const res = await fetch(`${API_URL}/boards/${currentBoardId}/stats`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      document.getElementById("stat-total").innerText = data.stats.total;
+      document.getElementById("stat-todo").innerText = data.stats.todo;
+      document.getElementById("stat-progress").innerText = data.stats.in_progress;
+      document.getElementById("stat-done").innerText = data.stats.done;
+      
+      const badge = document.getElementById("stat-source");
+      if (data.source === "cache") {
+        badge.innerText = "⚡ Πηγή: In-Memory Cache";
+        badge.className = "text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded font-medium";
+      } else {
+        badge.innerText = "💾 Πηγή: Database";
+        badge.className = "text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded font-medium";
+      }
+    }
+  </script>
+</body>
+</html>
