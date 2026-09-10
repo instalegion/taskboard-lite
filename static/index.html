@@ -36,7 +36,7 @@
         <h1 class="text-xl font-bold text-indigo-600">TaskBoard Lite</h1>
         <select id="board-select" onchange="loadTasks()" class="border rounded-lg p-1.5 text-sm bg-slate-50 outline-none">
         </select>
-        <button onclick="createBoardPrompt()" class="text-sm bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium">+ Νέο Board</button>
+        <button onclick="createBoardPrompt()" class="text-sm bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium">+ Νέο Board</button><button onclick="renameCurrentBoard()" class="text-sm bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 font-medium">Επεξεργασία Board</button><button onclick="deleteCurrentBoard()" class="text-sm bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100 font-medium">Διαγραφή Board</button>
       </div>
       <div class="flex items-center space-x-4">
         <span id="user-display" class="text-sm text-slate-500"></span>
@@ -248,11 +248,55 @@
       loadTasks();
     }
 
+async function editTaskPrompt(taskId, currentTitle, currentDesc) {
+      const newTitle = prompt("Επεξεργασία τίτλου task:", currentTitle);
+      if (newTitle === null) return; // Πάτησε άκυρο
+      const finalTitle = newTitle.trim() || currentTitle;
+
+      const newDesc = prompt("Επεξεργασία περιγραφής task:", currentDesc);
+      if (newDesc === null) return; // Πάτησε άκυρο
+      const finalDesc = newDesc.trim();
+
+      const res = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: finalTitle,
+          description: finalDesc
+        })
+      });
+
+      if (res.ok) {
+        loadTasks();
+      } else {
+        alert("Σφάλμα κατά την ενημέρωση του task.");
+      }
+    }
+
+    async function deleteCurrentBoard() {
+  if (!currentBoardId) return;
+  if (!confirm("Είσαι σίγουρος ότι θέλεις να διαγράψεις αυτό το Board και όλα τα tasks του;")) return;
+
+  const res = await fetch(`${API_URL}/boards/${currentBoardId}`, {
+    method: "DELETE",
+    headers: { "Authorization": `Bearer ${token}` }
+  });
+
+  if (res.ok) {
+    alert("Το Board διαγράφηκε!");
+    loadBoards(); // Επαναφόρτωση της λίστας των boards
+  } else {
+    alert("Σφάλμα κατά τη διαγραφή του board.");
+  }
+}
+
     async function loadTasks() {
       currentBoardId = document.getElementById("board-select").value;
       if (!currentBoardId) return;
 
-      // Φόρτωση tasks
       const res = await fetch(`${API_URL}/boards/${currentBoardId}/tasks`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -266,42 +310,93 @@
       progCol.innerHTML = "";
       doneCol.innerHTML = "";
 
-      let countTodo = 0, countProg = 0, countDone = 0;
-
       tasks.forEach(t => {
         const card = document.createElement("div");
-        card.className = "bg-white p-3 rounded-lg shadow-sm border border-slate-200";
+        card.className = "bg-white p-3 rounded-lg border border-gray-200 shadow-sm relative";
+        
         card.innerHTML = `
-          <div class="flex justify-between items-start mb-2">
-            <h4 class="font-medium text-slate-800 text-sm">${t.title}</h4>
-            <button onclick="deleteTask(${t.id})" class="text-slate-400 hover:text-red-500 text-xs">✕</button>
+          <div class="flex items-start justify-between">
+            <h4 
+              contenteditable="true" 
+              spellcheck="false"
+              class="font-medium text-gray-800 text-sm outline-none focus:bg-blue-50 focus:ring-1 focus:ring-blue-400 rounded px-1 -mx-1 flex-1"
+              title="Κλικ για επεξεργασία τίτλου"
+              onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}"
+              onblur="updateTaskInline(${t.id}, 'title', this.innerText)"
+            >${t.title}</h4>
+            <button onclick="deleteTask(${t.id})" class="text-gray-400 hover:text-red-500 font-bold ml-2 text-base leading-none" title="Διαγραφή">×</button>
           </div>
-          ${t.description ? `<p class="text-xs text-slate-500 mb-3">${t.description}</p>` : ''}
-          <div class="flex justify-end space-x-1 pt-2 border-t border-slate-100 text-xs">
-            ${t.status !== 'To Do' ? `<button onclick="updateStatus(${t.id}, 'To Do')" class="px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">← To Do</button>` : ''}
-            ${t.status !== 'In Progress' ? `<button onclick="updateStatus(${t.id}, 'In Progress')" class="px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">Prog</button>` : ''}
-            ${t.status !== 'Done' ? `<button onclick="updateStatus(${t.id}, 'Done')" class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100">Done →</button>` : ''}
+          
+          <p 
+            contenteditable="true" 
+            spellcheck="false"
+            class="text-xs text-gray-500 mt-1 outline-none focus:bg-blue-50 focus:ring-1 focus:ring-blue-400 rounded px-1 -mx-1 min-h-[16px]"
+            title="Κλικ για επεξεργασία περιγραφής"
+            onblur="updateTaskInline(${t.id}, 'description', this.innerText)"
+          >${t.description || ''}</p>
+
+          <div class="mt-3 flex justify-end gap-1">
+            ${t.status !== 'To Do' ? `<button onclick="moveTaskStatus(${t.id}, 'To Do')" class="text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded font-medium">← To Do</button>` : ''}
+            ${t.status !== 'In Progress' ? `<button onclick="moveTaskStatus(${t.id}, 'In Progress')" class="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">${t.status === 'Done' ? '← In Prog' : 'In Prog →'}</button>` : ''}
+            ${t.status !== 'Done' ? `<button onclick="moveTaskStatus(${t.id}, 'Done')" class="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-medium">Done →</button>` : ''}
           </div>
         `;
 
-        if (t.status === "To Do") {
-          todoCol.appendChild(card);
-          countTodo++;
-        } else if (t.status === "In Progress") {
-          progCol.appendChild(card);
-          countProg++;
-        } else if (t.status === "Done") {
-          doneCol.appendChild(card);
-          countDone++;
-        }
+        if (t.status === "To Do") todoCol.appendChild(card);
+        else if (t.status === "In Progress") progCol.appendChild(card);
+        else if (t.status === "Done") doneCol.appendChild(card);
       });
 
-      document.getElementById("count-todo").innerText = countTodo;
-      document.getElementById("count-progress").innerText = countProg;
-      document.getElementById("count-done").innerText = countDone;
+      // Ανανέωση των στατιστικών και του badge πηγής (Cache vs DB)
+      if (typeof loadStats === "function") {
+        await loadStats();
+      }
+    }
 
-      // Φόρτωση Cached Stats
-      loadStats();
+    // Συνάρτηση για αλλαγή κατάστασης (μετακίνηση στήλης)
+    async function moveTaskStatus(taskId, newStatus) {
+      await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      loadTasks();
+    }
+
+    // Συνάρτηση inline επεξεργασίας τίτλου/περιγραφής
+    async function updateTaskInline(taskId, field, value) {
+      const payload = {};
+      payload[field] = value.trim();
+
+      await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      // Ανανεώνουμε και τα στατιστικά αν χρειάζεται
+      if (typeof loadStats === "function") {
+        loadStats();
+      }
+    }
+
+    async function updateTaskField(taskId, field, value) {
+      const payload = {};
+      payload[field] = value.trim();
+
+      await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
     }
 
     async function loadStats() {
@@ -323,6 +418,69 @@
         badge.className = "text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded font-medium";
       }
     }
+
+// Μετονομασία Board
+async function renameCurrentBoard() {
+  if (!currentBoardId) {
+    alert("Επίλεξε πρώτα ένα board!");
+    return;
+  }
+
+  // Ασφαλής ανάκτηση του τίτλου είτε από select είτε με κενό fallback
+  const selectEl = document.querySelector("select");
+  const currentTitle = (selectEl && selectEl.selectedOptions && selectEl.selectedOptions[0]) 
+    ? selectEl.selectedOptions[0].text 
+    : "";
+
+  const newTitle = prompt("Νέος τίτλος για το Board:", currentTitle);
+  if (newTitle === null) return; // Πάτησε cancel
+  const trimmedTitle = newTitle.trim();
+  if (!trimmedTitle || trimmedTitle === currentTitle) return;
+
+  const res = await fetch(`${API_URL}/boards/${currentBoardId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({ title: trimmedTitle })
+  });
+
+  if (res.ok) {
+    await loadBoards();
+  } else {
+    alert("Σφάλμα κατά την ενημέρωση του board.");
+  }
+}
+
+// Επεξεργασία Task (Τίτλος & Περιγραφή)
+async function editTaskPrompt(taskId, oldTitle, oldDesc) {
+  const newTitle = prompt("Τίτλος Task:", oldTitle);
+  if (newTitle === null) return;
+  
+  const newDesc = prompt("Περιγραφή Task:", oldDesc);
+  if (newDesc === null) return;
+
+  const res = await fetch(`${API_URL}/tasks/${taskId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      title: newTitle.trim() || oldTitle,
+      description: newDesc.trim()
+    })
+  });
+
+  if (res.ok) {
+    loadTasks();
+    loadStats();
+  } else {
+    alert("Σφάλμα κατά την ενημέρωση του task.");
+  }
+}
+
   </script>
 </body>
 </html>

@@ -35,6 +35,8 @@ python -m uvicorn main:app --reload
 ### Boards
 - `GET /boards` : Λήψη λίστας των boards του χρήστη
 - `POST /boards` : Δημιουργία νέου board
+- `DELETE /boards/{board_id}` : Διαγραφή πίνακα και cascade διαγραφή των συνδεδεμένων tasks
+- `PUT /boards/{board_id}` : Ενημέρωση τίτλου πίνακα
 
 ### Tasks
 - `GET /boards/{board_id}/tasks` : Λήψη όλων των tasks ενός board

@@ -43,6 +43,9 @@ class UserRegister(BaseModel):
 class BoardCreate(BaseModel):
     title: str
 
+class BoardUpdate(BaseModel):
+    title: str
+
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = ""
@@ -157,6 +160,30 @@ def update_task(task_id: int, task_data: TaskUpdate, current_user: models.User =
     db.refresh(task)
     cache_store.pop(task.board_id, None)
     return task
+
+@app.put("/boards/{board_id}", tags=["Boards"])
+def update_board(board_id: int, payload: BoardUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    board = db.query(models.Board).filter(models.Board.id == board_id, models.Board.owner_id == current_user.id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="Board not found")
+    board.title = payload.title
+    db.commit()
+    db.refresh(board)
+    return board
+
+@app.delete("/boards/{board_id}", tags=["Boards"])
+def delete_board(board_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    board = db.query(models.Board).filter(models.Board.id == board_id, models.Board.owner_id == current_user.id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="Board not found")
+    
+    # Διαγραφή του board (λόγω cascade διαγράφονται αυτόματα και όλα τα tasks του)
+    db.delete(board)
+    db.commit()
+    
+    # Καθαρισμός από το cache
+    cache_store.pop(board_id, None)
+    return {"message": "Board deleted successfully"}
 
 @app.delete("/tasks/{task_id}", tags=["Tasks"])
 def delete_task(task_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
